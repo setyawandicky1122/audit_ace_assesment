@@ -1,12 +1,259 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="id">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>A.C.E v2.0 Application</title>
+    <title>A.C.E Strategy Game & Assessment</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+        .pixel-font { font-family: 'Press Start 2P', cursive; font-size: 0.7rem; }
+    </style>
 </head>
-<body>
-    <h1>Welcome to A.C.E v2.0</h1>
-    <p>This is the index page for the A.C.E v2.0 application.</p>
+<body class="bg-slate-900 text-slate-100 font-sans" x-data="gameApp()" x-init="init()">
+
+    <div class="min-h-screen flex flex-col md:flex-row">
+        
+        <aside class="w-full md:w-80 bg-slate-800 p-6 border-r border-slate-700 overflow-y-auto">
+            <h1 class="text-xl font-bold text-blue-400 mb-6 flex items-center gap-2">
+                <span class="pixel-font">A.C.E v2.0</span>
+            </h1>
+            
+            <div class="mb-8">
+                <button @click="showUserModal = true" class="w-full bg-blue-600 hover:bg-blue-500 p-3 rounded-lg font-bold transition">
+                    + Registrasi Auditor
+                </button>
+            </div>
+
+            <nav class="space-y-4">
+                <p class="text-xs font-semibold text-slate-500 uppercase">Daftar Auditor</p>
+                <template x-for="(u, index) in users" :key="index">
+                    <div @click="selectUser(index)" 
+                         :class="currentUserIndex === index ? 'border-blue-500 bg-slate-700' : 'border-slate-600'"
+                         class="p-4 border rounded-xl cursor-pointer hover:bg-slate-700 transition relative group">
+                        <p class="font-bold text-sm" x-text="u.name"></p>
+                        <p class="text-xs text-slate-400" x-text="u.role"></p>
+                        <button @click.stop="deleteUser(index)" class="absolute top-2 right-2 text-red-500 opacity-0 group-hover:opacity-100">&times;</button>
+                    </div>
+                </template>
+            </nav>
+        </aside>
+
+        <main class="flex-1 p-4 md:p-10">
+            <template x-if="!gameState">
+                <div class="h-full flex flex-col items-center justify-center text-center">
+                    <div class="bg-slate-800 p-8 rounded-3xl border border-slate-700 max-w-2xl shadow-2xl">
+                        <h2 class="text-3xl font-bold mb-4">Selamat Datang di <span class="text-blue-400">Audit Strategy Game</span></h2>
+                        <p class="text-slate-400 mb-8">Pilih auditor di samping atau buat baru, lalu mulai simulasi audit untuk menguji 21 kompetensi Anda.</p>
+                        <button x-show="currentUserIndex !== null" @click="startGame()" 
+                                class="bg-green-600 hover:bg-green-500 text-white px-10 py-4 rounded-2xl font-bold text-xl transition transform hover:scale-105">
+                            MULAI SIMULASI
+                        </button>
+                    </div>
+                </div>
+            </template>
+
+            <template x-if="gameState === 'playing'">
+                <div class="max-w-3xl mx-auto">
+                    <div class="flex justify-between items-center mb-8">
+                        <span class="pixel-font text-yellow-500">LEVEL: <span x-text="users[currentUserIndex].role"></span></span>
+                        <span class="text-slate-400">Progress: <span x-text="currentScenario + 1"></span>/4</span>
+                    </div>
+
+                    <div class="bg-slate-800 p-8 rounded-3xl border-t-4 border-blue-500 shadow-xl mb-6">
+                        <h3 class="text-xl font-semibold mb-6 leading-relaxed" x-text="scenarios[currentScenario].question"></h3>
+                        <div class="space-y-4">
+                            <template x-for="(opt, idx) in scenarios[currentScenario].options" :key="idx">
+                                <button @click="submitAnswer(opt.impact)" 
+                                        class="w-full text-left p-5 rounded-xl border border-slate-600 hover:border-blue-400 hover:bg-slate-700 transition flex gap-4 group">
+                                    <span class="bg-slate-700 group-hover:bg-blue-600 w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold" x-text="String.fromCharCode(65 + idx)"></span>
+                                    <span x-text="opt.text"></span>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </template>
+
+            <template x-if="gameState === 'result'">
+                <div class="max-w-5xl mx-auto">
+                    <div class="flex justify-between items-end mb-8">
+                        <div>
+                            <h2 class="text-3xl font-bold">Hasil Analisis Kompetensi</h2>
+                            <p class="text-blue-400" x-text="users[currentUserIndex].name"></p>
+                        </div>
+                        <button @click="gameState = null" class="bg-slate-700 px-4 py-2 rounded-lg text-sm">Kembali</button>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div class="bg-white p-6 rounded-3xl overflow-hidden shadow-2xl">
+                            <canvas id="radarChart"></canvas>
+                        </div>
+                        <div class="space-y-6">
+                            <div class="bg-slate-800 p-6 rounded-2xl border border-slate-700">
+                                <h4 class="text-yellow-500 font-bold mb-2">💡 Strategic Insight</h4>
+                                <p class="text-sm leading-relaxed text-slate-300" x-text="generateInsight()"></p>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div class="bg-blue-900/30 p-4 rounded-xl border border-blue-500/30">
+                                    <p class="text-xs text-blue-400 uppercase">Core Score</p>
+                                    <p class="text-2xl font-bold" x-text="getCategoryAvg('Core')"></p>
+                                </div>
+                                <div class="bg-purple-900/30 p-4 rounded-xl border border-purple-500/30">
+                                    <p class="text-xs text-purple-400 uppercase">Leadership</p>
+                                    <p class="text-2xl font-bold" x-text="getCategoryAvg('Leadership')"></p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+        </main>
+    </div>
+
+    <div x-show="showUserModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" x-transition>
+        <div class="bg-slate-800 rounded-3xl p-8 w-full max-w-md border border-slate-700 shadow-2xl">
+            <h2 class="text-2xl font-bold mb-6">Auditor Profile</h2>
+            <div class="space-y-4">
+                <input x-model="newUser.name" type="text" placeholder="Nama Lengkap" class="w-full bg-slate-900 border border-slate-700 p-4 rounded-xl outline-none focus:ring-2 focus:ring-blue-500">
+                <select x-model="newUser.role" class="w-full bg-slate-900 border border-slate-700 p-4 rounded-xl outline-none">
+                    <option value="Anggota Tim Audit">Anggota Tim Audit</option>
+                    <option value="Ketua Tim Audit">Ketua Tim Audit</option>
+                </select>
+            </div>
+            <div class="mt-8 flex gap-3">
+                <button @click="showUserModal = false" class="flex-1 py-4 text-slate-400 hover:bg-slate-700 rounded-xl">Batal</button>
+                <button @click="addUser()" class="flex-1 py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold transition">Simpan</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function gameApp() {
+            return {
+                gameState: null, // null, 'playing', 'result'
+                showUserModal: false,
+                users: [],
+                currentUserIndex: null,
+                currentScenario: 0,
+                newUser: { name: '', role: 'Anggota Tim Audit' },
+                
+                // Peta Kompetensi (21)
+                compSchema: {
+                    AOR: 'Core', ADA: 'Core', CSO: 'Core', DDR: 'Core', DLI: 'Core',
+                    CLE: 'Leadership', DOT: 'Leadership', HPA: 'Leadership', SOR: 'Leadership', TLE: 'Leadership',
+                    ATH: 'Specific', BOR: 'Specific', CEC: 'Specific', CCE: 'Specific', COA: 'Specific', 
+                    DEC: 'Specific', EST: 'Specific', ISE: 'Specific', INN: 'Specific', MIM: 'Specific', PSO: 'Specific'
+                },
+
+                scenarios: [
+                    {
+                        question: "Sistem mendeteksi lonjakan klaim 40% di Cabang X namun premi stabil. Apa tindakan pertama Anda?",
+                        options: [
+                            { text: "Gunakan Data Analytics untuk memetakan pola agen vs bengkel.", impact: { DDR: 5, DLI: 5, ATH: 4 } },
+                            { text: "Sidak ke Cabang X untuk periksa fisik berkas klaim.", impact: { COA: 5, DEC: 4, AOR: 3 } },
+                            { text: "Wawancara Kabag Klaim untuk perspektif tren pasar.", impact: { BOR: 5, ISE: 4, CSO: 3 } }
+                        ]
+                    },
+                    {
+                        question: "Ditemukan adjuster menyetujui klaim besar tanpa foto kerusakan yang memadai. Reaksi Anda?",
+                        options: [
+                            { text: "Investigasi hubungan personal adjuster dengan bengkel.", impact: { ISE: 5, ATH: 4, MIM: 3 } },
+                            { text: "Konfrontasi langsung adjuster dan minta pertanggungjawaban.", impact: { HPA: 5, DEC: 5, AOR: 4 } },
+                            { text: "Ubah sistem: foto wajib diunggah sebelum approval.", impact: { INN: 5, CCE: 4, PSO: 5 } }
+                        ]
+                    }
+                ],
+
+                init() {
+                    const saved = localStorage.getItem('ace_v2_data');
+                    this.users = saved ? JSON.parse(saved) : [];
+                },
+
+                addUser() {
+                    if(!this.newUser.name) return alert('Isi nama!');
+                    let baseScores = {};
+                    Object.keys(this.compSchema).forEach(k => baseScores[k] = 1);
+                    this.users.push({ ...this.newUser, scores: baseScores });
+                    this.save();
+                    this.newUser = { name: '', role: 'Anggota Tim Audit' };
+                    this.showUserModal = false;
+                },
+
+                selectUser(idx) { this.currentUserIndex = idx; this.gameState = null; },
+
+                deleteUser(idx) {
+                    if(confirm('Hapus data?')) { this.users.splice(idx, 1); this.save(); this.currentUserIndex = null; }
+                },
+
+                save() { localStorage.setItem('ace_v2_data', JSON.stringify(this.users)); },
+
+                startGame() {
+                    this.currentScenario = 0;
+                    this.gameState = 'playing';
+                },
+
+                submitAnswer(impact) {
+                    let user = this.users[this.currentUserIndex];
+                    for (let key in impact) {
+                        user.scores[key] = Math.min(5, (user.scores[key] || 1) + (impact[key] / 2));
+                    }
+                    
+                    if(this.currentScenario < this.scenarios.length - 1) {
+                        this.currentScenario++;
+                    } else {
+                        this.gameState = 'result';
+                        this.save();
+                        this.$nextTick(() => this.renderChart());
+                    }
+                },
+
+                getCategoryAvg(cat) {
+                    let user = this.users[this.currentUserIndex];
+                    let keys = Object.keys(this.compSchema).filter(k => this.compSchema[k] === cat);
+                    let sum = keys.reduce((a, b) => a + (user.scores[b] || 0), 0);
+                    return (sum / keys.length).toFixed(1);
+                },
+
+                renderChart() {
+                    const ctx = document.getElementById('radarChart').getContext('2d');
+                    const user = this.users[this.currentUserIndex];
+                    const labels = Object.keys(this.compSchema);
+                    const data = labels.map(l => user.scores[l]);
+
+                    new Chart(ctx, {
+                        type: 'radar',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: 'Profil Kompetensi',
+                                data: data,
+                                backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                                borderColor: 'rgba(59, 130, 246, 1)',
+                                pointBackgroundColor: 'rgba(59, 130, 246, 1)'
+                            }, {
+                                label: 'Target (Level 4)',
+                                data: new Array(21).fill(4),
+                                borderColor: 'rgba(239, 68, 68, 0.4)',
+                                borderDash: [5, 5],
+                                fill: false
+                            }]
+                        },
+                        options: { scales: { r: { min: 0, max: 5 } } }
+                    });
+                },
+
+                generateInsight() {
+                    let low = Object.entries(this.users[this.currentUserIndex].scores)
+                                .filter(([k, v]) => v < 3.5)[0];
+                    return low 
+                        ? `Anda kuat secara teknis, namun perlu meningkatkan kompetensi ${low[0]} untuk mencapai Level Senior/Lead.`
+                        : `Luar biasa! Profil Anda sangat seimbang dan siap untuk tanggung jawab lebih besar.`;
+                }
+            }
+        }
+    </script>
 </body>
 </html>
